@@ -1,0 +1,18 @@
+<article>
+  <ul>
+    <li>Автор: <a href="{% url 'posts:profile' post.author.username %}">
+        {% if post.author.get_full_name  %}
+        {{ post.author.get_full_name }}
+        {% else %}
+        {{ post.author.username }}
+        {% endif %}</a></li>
+    <li>Дата публикации: {{ post.created|date:'d E Y' }}</li>
+  </ul>
+  {% include 'posts/includes/image.html' %}
+  <p>{{ post.text|linebreaks }}</p>
+  <a href="{% url 'posts:post_detail' post.id %}">подробная информация</a>
+  <br>
+  {% if post.group and request.resolver_match.view_name != 'posts:group_list' %}
+  <a href="{% url 'posts:group_list' post.group.slug %}">все записи группы {{ post.group.title }}</a>
+  {% endif %}
+</article>

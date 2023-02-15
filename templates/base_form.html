@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block page_content %}
+{% load user_filters %}
+<div class="row justify-content-center">
+  <div class="col-md-8 p-5">
+    <div class="card">
+      <div class="card-header">{% block page_title %}{% endblock %}</div>
+      <div class="card-body">
+        {% include 'includes/form_errors.html' %}
+        <form method="POST" action="{% block action_url %}{% endblock %}" enctype="multipart/form-data">
+          {% csrf_token %}
+          {% block form_content %}{% endblock %}
+        </form>
+      </div> <!-- card body -->
+    </div> <!-- card -->
+  </div> <!-- col -->
+</div> <!-- row -->
+{% endblock %}
