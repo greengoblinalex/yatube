@@ -6,9 +6,11 @@ from django.urls import reverse
 from django import forms
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.cache import cache
 
-from ..models import Post, Group, User
+from ..models import Post, Group, User, Follow
 from .. import constants
+from . import helpers
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
 
@@ -18,7 +20,14 @@ class PostPagesTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create(username='auth')
+        cls.user = User.objects.create_user(username='auth')
+        cls.following = User.objects.create_user(username='following')
+
+        cls.following_group = Group.objects.create(
+            title='Тестовая группа',
+            slug='following-test-slug',
+            description='Тестовое описание',
+        )
         cls.group = Group.objects.create(
             title='Тестовая группа',
             slug='test-slug',
@@ -29,11 +38,23 @@ class PostPagesTests(TestCase):
             content=constants.BYTE_IMAGE,
             content_type='image/jpeg'
         )
+
+        cls.following_post = Post.objects.create(
+            text='Пост для теста подписок',
+            author=PostPagesTests.following,
+            group=PostPagesTests.following_group,
+            image=PostPagesTests.uploaded,
+        )
         cls.post = Post.objects.create(
             text='Тестовый пост',
             author=PostPagesTests.user,
             group=PostPagesTests.group,
             image=PostPagesTests.uploaded,
+        )
+
+        Follow.objects.create(
+            user=PostPagesTests.user,
+            author=PostPagesTests.following
         )
 
     @classmethod
@@ -42,6 +63,7 @@ class PostPagesTests(TestCase):
         shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
 
     def setUp(self):
+        cache.clear()
         self.authorized_client = Client()
         self.authorized_client.force_login(PostPagesTests.user)
 
@@ -67,6 +89,8 @@ class PostPagesTests(TestCase):
             reverse(
                 'posts:post_edit',
                 args=(PostPagesTests.post.id,)): 'posts/create_post.html',
+
+            reverse('posts:follow_index'): 'posts/follow.html',
         }
         for reverse_name, template in templates_pages_names.items():
             with self.subTest(reverse_name=reverse_name):
@@ -95,6 +119,8 @@ class PostPagesTests(TestCase):
             reverse(
                 'posts:post_edit',
                 args=(PostPagesTests.post.id,)): ('form', 'post',),
+
+            reverse('posts:follow_index'): ('page_obj',),
         }
 
         form_fields = {
@@ -102,75 +128,57 @@ class PostPagesTests(TestCase):
             'group': forms.fields.ChoiceField,
             'image': forms.fields.ImageField,
         }
-
         for reverse_name, attributes in page_names_attributes.items():
             with self.subTest(reverse_name=reverse_name):
                 response = self.authorized_client.get(reverse_name)
                 for attribute in attributes:
                     with self.subTest(attribute=attribute):
-                        if attribute == 'page_obj':
-                            first_object = response.context[attribute][0]
-                            page_obj_text_0 = first_object.text
-                            page_obj_author_0 = first_object.author
-                            page_obj_group_0 = first_object.group
-                            page_obj_group_id_0 = first_object.group.id
-                            page_obj_image_0 = first_object.image
-                            self.assertEqual(
-                                page_obj_text_0, PostPagesTests.post.text)
-                            self.assertEqual(
-                                page_obj_author_0, PostPagesTests.user)
-                            self.assertEqual(
-                                page_obj_group_0, PostPagesTests.group)
-                            self.assertEqual(
-                                page_obj_group_id_0, PostPagesTests.group.id)
-                            self.assertTrue(page_obj_image_0)
+                        helpers.helper_test_page_obj_attribute(
+                            self, response, attribute,
+                            reverse_name, PostPagesTests
+                        )
+                        helpers.helper_test_group_attribute(
+                            self, response, attribute, PostPagesTests
+                        )
+                        helpers.helper_test_author_attribute(
+                            self, response, attribute, PostPagesTests
+                        )
+                        helpers.helper_test_post_attribute(
+                            self, response, attribute, PostPagesTests
+                        )
+                        helpers.helper_test_post_attribute(
+                            self, response, attribute, PostPagesTests
+                        )
+                        helpers.helper_test_form_attribute(
+                            self, form_fields, response, attribute
+                        )
 
-                        elif attribute == 'group':
-                            first_object = response.context[attribute]
-                            group_title_0 = first_object.title
-                            group_slug_0 = first_object.slug
-                            group_description_0 = first_object.description
-                            group_id_0 = first_object.id
-                            self.assertEqual(
-                                group_title_0, PostPagesTests.group.title)
-                            self.assertEqual(
-                                group_slug_0, PostPagesTests.group.slug)
-                            self.assertEqual(
-                                group_description_0,
-                                PostPagesTests.group.description)
-                            self.assertEqual(
-                                group_id_0, PostPagesTests.group.id)
+    def test_caching(self):
+        """Кеширование работает"""
+        new_post = Post.objects.create(
+            text='Тестовый пост',
+            author=PostPagesTests.user,
+        )
 
-                        elif attribute == 'author':
-                            first_object = response.context[attribute]
-                            author_username_0 = first_object.username
-                            self.assertEqual(
-                                author_username_0,
-                                PostPagesTests.user.username)
+        response = self.client.get(reverse('posts:index'))
+        Post.objects.get(id=new_post.id).delete()
+        response_after_delete_post = self.client.get(reverse('posts:index'))
+        self.assertEqual(
+            response.content,
+            response_after_delete_post.content
+        )
 
-                        elif attribute == 'post':
-                            response = self.authorized_client.get(reverse_name)
-                            first_object = response.context[attribute]
-                            post_text_0 = first_object.text
-                            post_author_0 = first_object.author
-                            post_group_0 = first_object.group
-                            post_image_0 = first_object.image
-                            self.assertEqual(
-                                post_text_0, PostPagesTests.post.text)
-                            self.assertEqual(
-                                post_author_0, PostPagesTests.user)
-                            self.assertEqual(
-                                post_group_0, PostPagesTests.group)
-                            self.assertTrue(post_image_0)
+        cache.clear()
+        response_after_clear_cache = self.client.get(reverse('posts:index'))
+        self.assertNotEqual(
+            response.content,
+            response_after_clear_cache.content
+        )
 
-                        elif attribute == 'form':
-                            for value, expected in form_fields.items():
-                                with self.subTest(value=value):
-                                    response = self.authorized_client.get(
-                                        reverse_name)
-                                    form_field = response.context.get(
-                                        attribute).fields.get(value)
-                                    self.assertIsInstance(form_field, expected)
+    def test_page_404_use_custom_templage(self):
+        """Страница 404 выдает кастомный шаблон"""
+        response = self.client.get('/unexisting_page/')
+        self.assertTemplateUsed(response, 'core/404.html')
 
 
 class PaginatorViewsTests(TestCase):
@@ -193,6 +201,7 @@ class PaginatorViewsTests(TestCase):
         Post.objects.bulk_create(post_list)
 
     def setUp(self):
+        cache.clear()
         self.authorized_client = Client()
         self.authorized_client.force_login(PaginatorViewsTests.user)
 
@@ -257,6 +266,9 @@ class OnCreatePostTests(TestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.user = User.objects.create_user(username='auth')
+        cls.following = User.objects.create_user(username='following')
+        cls.not_follower = User.objects.create_user(username='not_follower')
+
         cls.group = Group.objects.create(
             title='Тестовая группа',
             slug='test-slug',
@@ -267,15 +279,29 @@ class OnCreatePostTests(TestCase):
             slug='non-test-slug',
             description='Тестовое описание',
         )
+
+        cls.following_post = Post.objects.create(
+            author=OnCreatePostTests.following,
+            text='Пост для теста подписок',
+        )
         cls.post = Post.objects.create(
             author=OnCreatePostTests.user,
             text='Тестовый пост ',
             group=OnCreatePostTests.group,
         )
 
+        Follow.objects.create(
+            user=OnCreatePostTests.user,
+            author=OnCreatePostTests.following
+        )
+
     def setUp(self):
+        cache.clear()
         self.authorized_client = Client()
         self.authorized_client.force_login(OnCreatePostTests.user)
+        self.authorized_not_follower_client = Client()
+        self.authorized_not_follower_client.force_login(
+            OnCreatePostTests.not_follower)
 
     def test_post_on_index_page(self):
         """Созданный пост есть на главной странице"""
@@ -310,3 +336,17 @@ class OnCreatePostTests(TestCase):
             response.context.get('page_obj')[0],
             OnCreatePostTests.post
         )
+
+    def test_only_followers_has_following_posts(self):
+        """Новая запись пользователя появляется в ленте тех,
+        кто на него подписан и не появляется в ленте тех,
+        кто не подписан."""
+        response = self.authorized_client.get(reverse('posts:follow_index'))
+        self.assertEqual(
+            response.context.get('page_obj')[0],
+            OnCreatePostTests.following_post
+        )
+
+        response = self.authorized_not_follower_client.get(
+            reverse('posts:follow_index'))
+        self.assertEqual(len(response.context.get('page_obj')), 0)

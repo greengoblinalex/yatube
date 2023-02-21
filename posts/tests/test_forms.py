@@ -17,7 +17,7 @@ class TaskCreateFormTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create(username='auth')
+        cls.user = User.objects.create_user(username='auth')
         cls.group = Group.objects.create(
             title='Тестовая группа',
             slug='test-slug',
@@ -62,11 +62,13 @@ class TaskCreateFormTests(TestCase):
             follow=True
         )
         diff = Post.objects.exclude(id__in=posts_id)
+        post = diff.first()
+
         self.assertEqual(len(diff), 1)
-        self.assertEqual(diff[0].author, response.wsgi_request.user)
-        self.assertEqual(diff[0].text, form_data['text'])
-        self.assertEqual(diff[0].group.id, form_data['group'])
-        self.assertEqual(diff[0].image, 'posts/test_image_1.jpeg')
+        self.assertEqual(post.author, response.wsgi_request.user)
+        self.assertEqual(post.text, form_data['text'])
+        self.assertEqual(post.group.id, form_data['group'])
+        self.assertEqual(post.image, 'posts/test_image_1.jpeg')
 
     def test_edit_post(self):
         """Проверяем, что пост редактируется корректно"""
@@ -92,6 +94,19 @@ class TaskCreateFormTests(TestCase):
         self.assertEqual(new_post.group.id, form_data['group'])
         self.assertEqual(new_post.image, 'posts/test_image_2.jpeg')
 
+        old_group_response = self.authorized_client.get(
+            reverse('posts:group_list', args=(TaskCreateFormTests.group.slug,))
+        )
+        self.assertEqual(
+            old_group_response.context['page_obj'].paginator.count, 0)
+
+        new_group_response = self.authorized_client.get(
+            reverse('posts:group_list', args=(
+                TaskCreateFormTests.changing_group.slug,))
+        )
+        self.assertEqual(
+            new_group_response.context['page_obj'].paginator.count, 1)
+
     def test_create_comment(self):
         """После успешной отправки комментарий появляется на странице поста"""
         form_data = {
@@ -103,5 +118,7 @@ class TaskCreateFormTests(TestCase):
             data=form_data,
             follow=True
         )
-        comment = Comment.objects.get(text=form_data['text'])
-        self.assertTrue(comment)
+        new_comment = Comment.objects.last()
+        self.assertEqual(new_comment.post, TaskCreateFormTests.post)
+        self.assertEqual(new_comment.author, TaskCreateFormTests.user)
+        self.assertEqual(new_comment.text, form_data['text'])

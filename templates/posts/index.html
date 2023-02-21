@@ -3,6 +3,7 @@
 {% block page_content %}
 <div class="container py-5">
   <h1>Последние обновления на сайте</h1>
+  {% include 'posts/includes/switcher.html' %}
   {% for post in page_obj %}
   {% include 'posts/includes/article.html' %}
   {% if not forloop.last %}

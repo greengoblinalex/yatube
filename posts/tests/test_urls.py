@@ -2,6 +2,7 @@ from http import HTTPStatus
 
 from django.test import TestCase, Client
 from django.urls import reverse
+from django.core.cache import cache
 
 from ..models import Group, Post, User
 
@@ -11,8 +12,8 @@ class PostURLTests(TestCase):
     def setUpClass(cls):
         super().setUpClass()
 
-        cls.author = User.objects.create(username='auth')
-        cls.no_name_user = User.objects.create(username='no_name')
+        cls.author = User.objects.create_user(username='auth')
+        cls.no_name_user = User.objects.create_user(username='no_name')
         cls.group = Group.objects.create(
             title='Тестовая группа',
             slug='test-slug',
@@ -25,6 +26,7 @@ class PostURLTests(TestCase):
         )
 
     def setUp(self):
+        cache.clear()
         self.authorized_client = Client()
         self.authorized_client.force_login(PostURLTests.no_name_user)
         self.authorized_author_client = Client()
@@ -68,6 +70,7 @@ class PostURLTests(TestCase):
             '/posts/1/': 'posts/post_detail.html',
             '/create/': 'posts/create_post.html',
             '/posts/1/edit/': 'posts/create_post.html',
+            '/follow/': 'posts/follow.html'
         }
         for adress, template in templates_url_names.items():
             with self.subTest(adress=adress):
